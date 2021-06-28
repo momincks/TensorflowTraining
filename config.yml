@@ -1,0 +1,52 @@
+training:
+  using_float16: True
+  size_height: 224
+  size_width: 224
+  weight_decay: 0.005
+  num_class: 2
+  batch_size: 64
+  num_batch: 50000 # total number of batches to train
+  validate_in: # do validation when doing n-th batch
+    - 40000
+    - 45000
+    - 50000
+  save_path: /media/kevin/SSD1/ML/is_person/ # where to save .h5 models
+
+scheduler:
+  using: cosine_decay_restarts # cosine_decay_restarts
+  cosine_decay_restarts:
+    - lr_init: 0.1 # max learning rate
+    - first_decay_steps: 1000
+    - t_mul: 2.0 # decay step multipler after every restarts
+    - m_mul: 0.75 # max lr multipler after every restarts
+    - alpha: 0.01 # current max lr * alpha = lowest learning rate right before every restarts
+
+lossfn:
+  using: focal # bce, focal
+  bce:
+    - epsilon: 0.00000001
+  focal:
+    - alpha: 0.25
+    - gamma: 2.0
+    - epsilon: 0.00000001
+
+optimizer:
+  using: novograd # sgdw, adamw, novograd
+  novograd:
+    - weight_decay: 0.005
+    - epsilon: 0.00000001
+
+dataset:
+  using_tfrecord: True
+  wrong_label: undetermined # class name for wrongly detected objects, e.g. undetermined
+  class_name: # in your desired model output order
+    - undetermined
+    - person
+  directory_map: # directory to class name mapping, can parse empty site background images as label name "frame"
+    - /media/kevin/SSD1/ML/dataset/person/helmet/background: undetermined,
+    - /media/kevin/SSD1/ML/dataset/person/helmet/no: person,
+    - /media/kevin/SSD1/ML/dataset/person/helmet/yes: person,
+  validation_split: 0.1 # train and validate all when it is 0
+  shuffle_cache: 8192 # number of shuffled objects in the dataset
+
+
