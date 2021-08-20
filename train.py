@@ -27,10 +27,17 @@ def init():
     parser.add_argument("--config", "-c", help="path to config file")
     args = parser.parse_args()
     with open(args.config, "r") as file:
-        cfg = EasyDict(yaml.safe_load(file))
+        cfg = yaml.safe_load(file)
+        print(cfg)
+        file.close()
+
+    # copy config file
+    os.makedirs(cfg["training"]["save_path"], exist_ok=True)
+    copy2(args.config, cfg["training"]["save_path"])
+
     return cfg
         
-def get_model(size_h, size_w):
+def get_model(size_h, size_w, num_class, load_path=None):
     model = effnetv2_model.get_model('efficientnetv2-b0', include_top=False, pretrained=True)
     inputs = tf.keras.Input([size_h, size_w, 3], name="input")
     x = inputs
@@ -39,6 +46,8 @@ def get_model(size_h, size_w):
     x = tf.keras.layers.Dense(num_class, activation='softmax', dtype=tf.float32, name="output")(x)
     outputs = x
     model = tf.keras.Model(inputs, outputs, name="model")
+    if load_path:
+        model.load_weights(load_path)
     print(model.summary())
     return model
 
@@ -60,7 +69,7 @@ if __name__=="__main__":
     val_split = data_cfg["validation_split"]
     class_name = data_cfg["class_name"]
     wrong_label = data_cfg["wrong_label"]
-
+    shuffle_cache = data_cfg["shuffle_cache"]
     num_class = len(class_name)
     if data_cfg["using_tfrecord"]:
         ds = TFRecordLoader(train_cfg=train_cfg,
@@ -69,7 +78,7 @@ if __name__=="__main__":
                             size_w=size_w,
                             batch_size=batch_size,
                             val_split=val_split,
-                            shuffle=8192,
+                            shuffle=shuffle_cache,
                             classe_name=class_name,
                             wrong_label=wrong_label,
                             dir_map=dir_map
@@ -81,7 +90,7 @@ if __name__=="__main__":
                             size_w=size_w,
                             batch_size=batch_size,
                             val_split=val_split,
-                            shuffle=8192,
+                            shuffle=shuffle_cache,
                             class_name=class_name,
                             wrong_label=wrong_label,
                             dir_map=dir_map
@@ -103,7 +112,8 @@ if __name__=="__main__":
         tf.keras.mixed_precision.experimental.set_policy(policy)
         opt = tf.keras.mixed_precision.experimental.LossScaleOptimizer(opt, loss_scale="dynamic")
 
-    model = get_model(size_h, size_w)
+    load_path = train_cfg["load_path"]
+    model = get_model(size_h, size_w, num_class, load_path)
     using_fp16 = train_cfg["using_float16"]
     trainer = Trainer(using_fp16, loss_cfg, model, opt)
 
@@ -121,7 +131,6 @@ if __name__=="__main__":
     for class_id in range(num_class):
         train_metrics.extend([tf.keras.metrics.Precision(class_id=class_id), tf.keras.metrics.Recall(class_id=class_id)])
         val_metrics.extend([tf.keras.metrics.Precision(class_id=class_id), tf.keras.metrics.Recall(class_id=class_id)])
-
 
     train_batch_id = 0
     while True:
@@ -147,8 +156,11 @@ if __name__=="__main__":
             sys.stdout.write("\x1b[2K")
             print(f"train ... batch: {train_batch_id} lr: {show_lr} loss: {show_loss} metric: {show_scores}", end="\r")
 
+            if train_batch_id in validate_in + more_intense_in:
+                print("\n", end="\r")
+
             if train_batch_id in validate_in:
-                print(f"\nvalidation begins at {train_batch_id} ...")
+                print(f"validation begins at {train_batch_id} ...")
                 val_losses = []
                 for val_batch_id, (inputs, y_true) in enumerate(val_ds, 1):
                     val_loss, y_pred = trainer.val_fn(inputs, y_true)
@@ -161,24 +173,22 @@ if __name__=="__main__":
                     print(f"val ... batch: {val_batch_id} loss: {show_loss} metric: {show_scores}", end="\r")
                 [i.reset_states() for i in train_metrics]
                 [i.reset_states() for i in val_metrics]
-                os.makedirs(save_path, exist_ok=True)
                 weight_name = f"{train_batch_id}_{show_loss}.h5"
                 model.save_weights(os.path.join(save_path, weight_name))
                 log_name = os.path.join(save_path, "logging.txt")
                 log = open(log_name, "a+")
-                log.write(f"{str(datetime.now())}: {train_batch_id} loss: {show_loss} metrics: {show_scores}")
+                log.write(f"{str(datetime.now())}: {train_batch_id} loss: {show_loss} metrics: {show_scores}\n")
                 log.close()
                 print("\nvalidation ended ...")
 
             if train_batch_id in more_intense_in:
                 ds.more_intense()
-                print("\ntriggered more intense augmentation at {train_batch_id} ...")
+                print(f"triggered more intense augmentation at {train_batch_id} ...")
 
             ### debug section ###
-            if train_batch_id in [10,20,30]:
-                img = tf.cast(tf.clip_by_value(inputs[0]*255.,0,255.),tf.uint8)
-                img = tf.io.encode_jpeg(img[0], format='', quality=90, progressive=False, optimize_size=True, chroma_downsampling=False)
-                tf.io.write_file(f'tmp_{train_batch_id}.jpg',img)
+            # img = tf.cast(tf.clip_by_value(inputs[0]*255.,0,255.),tf.uint8)
+            # img = tf.io.encode_jpeg(img, format='', quality=85, progressive=False, optimize_size=True, chroma_downsampling=False)
+            # tf.io.write_file(f'./samples/tmp_{train_batch_id}.jpg',img)
 
             # if train_batch_id in reshape_in:
             #     current_height, current_width = training_size[0]["height"], training_size[0]["width"]

@@ -17,8 +17,20 @@ class Loader:
     # use dir_map to map directories to class_name
     # map to label "frame" to random crop it and train it as background
 
-    def __init__(self, train_cfg, data_cfg, size_h, size_w, batch_size, val_split, shuffle, class_name, wrong_label, dir_map,
-                augment_multiple, augment_step, min_intensity):
+    def __init__(self, 
+                train_cfg, 
+                data_cfg, 
+                size_h, 
+                size_w, 
+                batch_size, 
+                val_split, 
+                shuffle, 
+                class_name, 
+                wrong_label, 
+                dir_map,
+                augment_multiple, 
+                augment_step, 
+                min_intensity):
         self.size_h, self.size_w = size_h, size_w
         self.batch_size = batch_size
         self.shuffle = shuffle
@@ -27,8 +39,8 @@ class Loader:
         self.wrong_label = tf.constant(wrong_label)
         self.on_value = 0.95
         self.off_value = (1. - self.on_value)/(self.num_class-1)
-        self.cache_image = None
-        self.cache_label = None
+        self.cached_image = None
+        self.cached_label = None
         self.augment_multiple = augment_multiple
         self.augment_step = augment_step
         self.intensity = min_intensity.copy()
@@ -38,29 +50,39 @@ class Loader:
         self.AUTOTUNE = tf.data.experimental.AUTOTUNE
 
     def single_augment(self,img,label):   
-    # augment for single image       
-        img = tfa.image.shear_y(img,tf.random.uniform([],-self.intensity["shearing"],self.intensity["shearing"]),tf.reduce_mean(img))
-        img = tfa.image.shear_x(img,tf.random.uniform([],-self.intensity["shearing"],self.intensity["shearing"]),tf.reduce_mean(img))
+    # augment for single image
+        if self.cached_label and tf.random.uniform([]) < 0.5:
+                factor = tf.random.uniform([])
+                img = tfa.image.blend(img, self.cached_image, factor)
+                label = label * (1.-factor) + self.cached_label * factor
+        else:
+            self.cached_image = img
+            self.label = label
+        if tf.random.uniform([]) < 0.5:
+            img = tfa.image.shear_y(img,tf.random.uniform([],-self.intensity["shearing"],self.intensity["shearing"]),tf.reduce_mean(img))
+            img = tfa.image.shear_x(img,tf.random.uniform([],-self.intensity["shearing"],self.intensity["shearing"]),tf.reduce_mean(img))
         return img, label
 
     def batch_augment(self,img,label):
     # augment for batched image
         img = tf.image.random_brightness(img,self.intensity["brightness"])
-        img = tf.image.random_contrast(img,1-self.intensity["contrast"],1+self.intensity["contrast"])
+        img = tf.image.random_contrast(img,1.-self.intensity["contrast"],1.+self.intensity["contrast"])
         img = tf.image.random_hue(img,self.intensity["hue"])
-        img = tf.image.random_saturation(img,1-self.intensity["saturation"],1+self.intensity["saturation"])   
+        img = tf.image.random_saturation(img,1.-self.intensity["saturation"],1.+self.intensity["saturation"])   
         img = tf.image.random_flip_left_right(img)
         img = tf.image.random_flip_up_down(img)
         img = tfa.image.rotate(img, tf.random.uniform([],0.,90.), "bilinear", "reflect")
         # gaussian noise
-        if tf.random.uniform([]) < 1:
-            stddev = tf.random.uniform([],0.,self.intensity["gaussian_std"])
-            mean = tf.random.uniform([],-self.intensity["gaussian_mean"],self.intensity["gaussian_mean"])
-            img = img + tf.random.normal(shape=tf.shape(img), mean=mean, stddev=stddev, dtype=tf.float32)
+        if self.intensity["gaussian_mean"] or self.intensity["gaussian_std"]:
+            if tf.random.uniform([]) < 0.5:
+                stddev = tf.random.uniform([],0.,self.intensity["gaussian_std"])
+                mean = tf.random.uniform([],-self.intensity["gaussian_mean"],self.intensity["gaussian_mean"])
+                img = img + tf.random.normal(shape=tf.shape(img), mean=mean, stddev=stddev, dtype=tf.float32)
         # random cutout
-        if tf.random.uniform([]) < 1:
-            size = tf.random.uniform([2], int(self.size_h*self.intensity["cutout_min"]), int(self.size_h*self.intensity["cutout_max"]), dtype=tf.int32)
-            img = tfa.image.random_cutout(img, size//2*2)
+        if self.intensity["cutout_min"] or self.intensity["cutout_max"]:
+            if tf.random.uniform([]) < 0.5:
+                size = tf.random.uniform([2], int(self.size_h*self.intensity["cutout_min"]), int(self.size_h*self.intensity["cutout_max"]), dtype=tf.int32)
+                img = tfa.image.random_cutout(img, size//2*2)
         # resize and padding
         # if tf.random.uniform([]) < 0.1:
         #     # resize on height and padding
@@ -135,16 +157,16 @@ class TFRecordLoader(Loader):
                 wrong_label="undetermined",
                 dir_map={"./class1":"class1","./class2":"class2","./frame":"frame"},
                 augment_multiple=4,
-                augment_step=8,
+                augment_step=7,
                 min_intensity={
-                    "brightness":0.1,
-                    "contrast":0.1,
-                    "saturation":0.05,
-                    "hue":0.05,
-                    "shearing":0.05,
-                    "gaussian_std":0.1,
-                    "gaussian_mean":0.05,
-                    "cutout_min":1/20,
+                    "brightness":0.125,
+                    "contrast":0.125,
+                    "saturation":0.065,
+                    "hue":0.065,
+                    "shearing":0.065,
+                    "gaussian_std":0.125,
+                    "gaussian_mean":0.0,
+                    "cutout_min":1/18,
                     "cutout_max":1/12,
                     }
                 ):
@@ -225,18 +247,18 @@ class ImageLoader(Loader):
                 class_name=["class1","class2"],
                 wrong_label="undetermined",
                 dir_map={"./class1":"class1","./class2":"class2"},
-                augment_multiple=4,
-                augment_step=8,
+                augment_multiple=6,
+                augment_step=14,
                 min_intensity={
                     "brightness":0.05,
                     "contrast":0.05,
-                    "saturation":0.025,
-                    "hue":0.025,
-                    "shearing":0.025,
+                    "saturation":0.05,
+                    "hue":0.035,
+                    "shearing":0.035,
                     "gaussian_std":0.05,
                     "gaussian_mean":0.0,
                     "cutout_min":1/24,
-                    "cutout_max":1/20,
+                    "cutout_max":1/18,
                     }
                 ):
         super(ImageLoader, self).__init__(train_cfg, data_cfg, size_h, size_w, batch_size, val_split, shuffle, class_name, wrong_label, dir_map, augment_multiple, augment_step, min_intensity)
@@ -281,12 +303,13 @@ class ImageLoader(Loader):
         img = tf.io.read_file(img)
         img = tf.io.decode_image(img, channels=3, dtype=tf.float32, expand_animations=False)
         # label smoothing for blurry/small images
-        if min(tf.shape(img)[:2]) < self.size_w//8 and label != "background":
+        if min(tf.shape(img)[:2]) < self.size_w//16 and label != "background":
             img = tf.image.resize(img,[self.size_h,self.size_w],"bicubic")
-            on_value = self.on_value-0.3
-            off_value = (1. - on_value)/(self.num_class-1)
-            label = tf.argmax(label == self.class_name)
-            label = tf.one_hot(label, len(self.class_name), on_value, off_value)
+            # on_value = self.on_value-0.4
+            # off_value = (1. - on_value)/(self.num_class-1)
+            # label = tf.argmax(label == self.class_name)
+            label = tf.argmax(self.wrong_label == self.class_name)
+            label = tf.one_hot(label, len(self.class_name), self.on_value, self.off_value)
         elif min(tf.shape(img)[:2]) < self.size_w//4 and label != "background":
             img = tf.image.resize(img,[self.size_h,self.size_w],"bicubic")
             on_value = self.on_value-0.15
@@ -295,8 +318,8 @@ class ImageLoader(Loader):
             label = tf.one_hot(label, len(self.class_name), on_value, off_value)   
         # random crop for label "frame"              
         elif tf.math.equal(label,"frame"):
-            size_h = tf.random.uniform([],tf.shape(img)[0]//32,tf.shape(img)[0]//4,dtype=tf.int32).numpy()
-            size_w = tf.random.uniform([],tf.shape(img)[1]//32,tf.shape(img)[1]//4,dtype=tf.int32).numpy()
+            size_h = tf.random.uniform([],tf.shape(img)[0]//32,tf.shape(img)[0]//3,dtype=tf.int32).numpy()
+            size_w = tf.random.uniform([],tf.shape(img)[1]//32,tf.shape(img)[1]//3,dtype=tf.int32).numpy()
             anchor_x = tf.random.uniform([],0,tf.shape(img)[1]-size_w,dtype=tf.int32).numpy()
             anchor_y = tf.random.uniform([],0,tf.shape(img)[0]-size_h,dtype=tf.int32).numpy()
             img = img[anchor_y:anchor_y+size_h,anchor_x:anchor_x+size_w,:]
@@ -314,6 +337,9 @@ class ImageLoader(Loader):
         img = tf.io.read_file(img)
         img = tf.io.decode_image(img,channels=3,dtype=tf.float32,expand_animations=False)
         img = tf.image.resize(img,[self.size_h,self.size_w],"bicubic")
+        img = tf.image.random_flip_left_right(img, seed=0)
+        img = tf.image.random_flip_up_down(img, seed=0)
+        img = tfa.image.rotate(img, tf.random.uniform([],0.,90.,seed=0), "bilinear", "reflect")
         label = tf.argmax(label == self.class_name)
         label = tf.one_hot(label, len(self.class_name), self.on_value, self.off_value)
         return img, label

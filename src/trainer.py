@@ -37,7 +37,7 @@ class LossManager:
             self.loss_fn = self.focal
 
     def bce(self, y_true, y_pred):
-        return - y_true * tf.math.log(y_pred + self.bce_epsilon) - (1 - y_true) * tf.math.log(1 - y_pred + self.bce_epsilon)
+        return - y_true * tf.math.log(y_pred + self.bce_epsilon) - (1. - y_true) * tf.math.log(1. - y_pred + self.bce_epsilon)
 
     def focal(self, y_true, y_pred):
         alpha_t = y_true * self.focal_alpha + (tf.ones_like(y_true) - y_true) * (1. - self.focal_alpha)

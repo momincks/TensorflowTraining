@@ -1,38 +1,72 @@
+####################
+# put 
+# your
+# note
+# here
+####################
+
+task: classification
+
 training:
+
   using_float16: True
   size_height: 160
   size_width: 160
   training_size:
-    - height: 160
-      width: 160
-    - height: 192
-      width: 192
-    - height: 224
-      width: 224
+    height: 160
+    width: 160
+    height: 192
+    width: 192
+    height: 224
+    width: 224
   batch_size: 64
   num_batch: 49000 # total number of batches to train
   validate_in: # do validation when doing n-th batch
-    - 5000
-    - 10000
-    - 20000
-    - 30000
-    - 40000
-    - 49000
+    5000
+    10000
+    20000
+    30000
+    40000
+    49000
   more_intense_in:
-    - 5000
-    - 10000
-    - 15000
-    - 20000
-    - 25000
-    - 30000
-    - 35000
+    5000
+    10000
+    15000
+    20000
+    25000
+    30000
+    35000
   reshape_in:
-    - 10000
-    - 20000
-    - 30000
+    10000
+    20000
+    30000
   save_path: ./weights # where to save .h5 models
 
+augment:
+
+  min_intensity:
+    brightness: 0.05 # 0.0 to 1.0
+    contrast: 0.05 # 0.0 to 1.0
+    saturation: 0.05 # 0.0 to 1.0
+    hue: 0.025 # 0.0 to 0.5
+    shearing: 0.05 # 0.0 to 1.0
+    gaussian_std: 0.0 # 0.0 to inf
+    gaussian_mean: 0.0 # -1.0 to 1.0
+    cutout_min: 0.05 # 0.0 to 1.0
+    cutout_max: 0.075 # 0.0 to 1.0
+  max_intensity:
+    brightness: 0.2 # 0.0 to 1.0
+    contrast: 0.2 # 0.0 to 1.0
+    saturation: 0.2 # 0.0 to 1.0
+    hue: 0.1 # 0.0 to 0.5
+    shearing: 0.1 # 0.0 to 1.0
+    gaussian_std: 0.5 # 0.0 to inf
+    gaussian_mean: 0.05 # -1.0 to 1.0
+    cutout_min: 0.2 # 0.0 to 1.0
+    cutout_max: 0.3 # 0.0 to 1.0
+
 scheduler:
+
   using: warmup_cosine_decay_restarts # cosine_decay_restarts
   warmup_cosine_decay_restarts:
     # lowest lr at 2000, 3000, 5000, 9000, 17000, 33000, 49000 if first_decay_steps=1000, wamrup=1000, t_mul=2
@@ -45,6 +79,7 @@ scheduler:
     alpha: 0.01 # current max lr * alpha = lowest learning rate right before every restarts
 
 lossfn:
+
   using: focal # bce, focal
   bce:
     epsilon: 0.00000001
@@ -54,24 +89,23 @@ lossfn:
     epsilon: 0.00000001
 
 optimizer:
+
   using: novograd # sgdw, adamw, novograd
   novograd:
     weight_decay: 0.005
     epsilon: 0.00000001
 
 dataset:
+
   using_tfrecord: False
   wrong_label: background # class name for wrongly detected objects, e.g. undetermined
   class_name: # in your desired model output order
-    - background
-    - no_helmet
-    - yes_helmet
-    
+    background
+    no_helmet
+    yes_helmet
   directory_map: # directory to class name mapping, can parse empty site background images as label name "frame"
-    ### projects
     /media/kevin/SSD1/ML/dataset/person/helmet/background: background
     /media/kevin/SSD1/ML/dataset/person/helmet/no: no_helmet
     /media/kevin/SSD1/ML/dataset/person/helmet/yes: yes_helmet
-
   validation_split: 0.1 # train and validate all when it is 0
   shuffle_cache: 8192 # number of shuffled objects in the dataset
