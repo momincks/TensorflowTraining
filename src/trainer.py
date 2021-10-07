@@ -24,26 +24,38 @@ class LRScheduler:
                 else:
                     return self.scheduler(batch_id - self.warmup_steps)
 
+
+
 class LossManager:
-    
+
     def __init__(self, loss_config):
-        self.bce_epsilon, = loss_config["bce"]
-        self.focal_alpha = loss_config["focal"]["alpha"]
-        self.focal_gamma = loss_config["focal"]["gamma"]
-        self.focal_epsilon = loss_config["focal"]["epsilon"]
         if loss_config["using"] == "bce":
+            self.epsilon = loss_config["bce"]["epsilon"]
             self.loss_fn = self.bce
         elif loss_config["using"] == "focal":
+            self.focal_alpha = loss_config["focal"]["alpha"]
+            self.focal_gamma = loss_config["focal"]["gamma"]
+            self.focal_epsilon = loss_config["focal"]["epsilon"]   
             self.loss_fn = self.focal
+        elif loss_config["using"] == "charbonnier":
+            self.epsilon = loss_config["charbonnier"]["epsilon"]
 
+
+
+    @tf.function
     def bce(self, y_true, y_pred):
         return - y_true * tf.math.log(y_pred + self.bce_epsilon) - (1. - y_true) * tf.math.log(1. - y_pred + self.bce_epsilon)
 
+    @tf.function
     def focal(self, y_true, y_pred):
         alpha_t = y_true * self.focal_alpha + (tf.ones_like(y_true) - y_true) * (1. - self.focal_alpha)
         y_t = tf.multiply(y_true, y_pred) + tf.multiply(1. - y_true, 1. - y_pred)
         fl = tf.multiply(tf.multiply(tf.math.pow(tf.subtract(1., y_t), self.focal_gamma), - tf.math.log(y_t + self.focal_epsilon)), alpha_t)
         return tf.reduce_mean(fl)
+
+    @tf.function
+    def charbonnier(self, y_true, y_pred):
+        return tf.math.sqrt(tf.math.square(y_true - y_pred) + self.eps)
 
     def get(self):
         return self.loss_fn
